@@ -5,17 +5,20 @@ import json
 from typing import Any
 
 
-SYSTEM_PROMPT = """You are an expert in automatic differentiation, calculus, and scientific computing.
-You will be given a mathematical differentiation problem. Your task is to write a Python function
-called `solve` that computes the requested derivative.
+SYSTEM_PROMPT = """You are an expert in differentiable programming, automatic differentiation, and scientific computing.
+You will be given a problem involving a non-differentiable computation (sorting, ranking, discrete sampling,
+combinatorial algorithms, simulation with contacts, etc.) that needs to be made differentiable.
+Your task is to write a Python function called `solve` that computes the gradient through the
+appropriate differentiable relaxation or gradient estimator.
 
 Rules:
 - Your function MUST be named `solve` with the exact signature specified.
 - You may use: numpy, scipy (scipy.special, scipy.integrate, scipy.optimize, scipy.linalg), math.
 - Return numerical values (float, list of floats, numpy arrays, or dicts as specified).
-- Do NOT use JAX or PyTorch unless the problem specifically allows it.
+- Do NOT use JAX or PyTorch.
 - Put your code in a ```python code block.
-- Include all necessary imports inside or above the function."""
+- Include all necessary imports inside or above the function.
+- You may need to implement both the forward pass and backward pass of the differentiable relaxation."""
 
 
 def query_openai(prompt: str, model: str = "gpt-4o", temperature: float = 0.0, **kwargs) -> str:

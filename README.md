@@ -1,26 +1,21 @@
-# AD-Bench
+# AD-Bench: Differentiable Almost Everything
 
-A benchmark for evaluating large language models on non-trivial automatic differentiation problems.
+A benchmark for evaluating LLMs on making non-differentiable computations differentiable — sorting, ranking, dynamic programming, discrete sampling, physics simulation, and implicit layers.
+
+Inspired by the [ICML 2024 "Differentiable Almost Everything" workshop](https://differentiable.xyz): this benchmark tests cases where **vanilla automatic differentiation fails or does not yield meaningful gradients**, requiring relaxations, custom gradient estimators, or implicit differentiation.
 
 ## Overview
 
-AD-Bench tests whether LLMs can write correct code for computing derivatives in settings where standard backpropagation or textbook formulas are insufficient. Problems require genuine mathematical reasoning: implicit differentiation through fixed points, sensitivity analysis of ODEs and PDEs, Fréchet derivatives of matrix functions, stochastic gradient estimation, numerical stability, and more.
+**30 problems** across **6 categories**. The model must write Python code that computes gradients through differentiable relaxations of non-differentiable operations.
 
-**50 problems** across **11 categories**, calibrated so that frontier models score 70–90%.
-
-| Category | Problems | Description |
+| Category | Problems | Examples |
 |---|---|---|
-| Implicit Differentiation | 4 | Fixed points, Markov chains, Lyapunov equations |
-| Integrals | 4 | Oscillatory, elliptic, singular, Laplace-type |
-| Optimization | 4 | KKT, envelope theorem, bilevel, LP sensitivity |
-| Matrix Calculus | 5 | Matrix sqrt/log/exp Fréchet derivatives, Cholesky, nuclear norm |
-| ODE Sensitivity | 5 | Adjoint method, stiff systems, BVPs, limit cycles |
-| Stochastic | 3 | Geometric distribution, max of Gaussians, Ising model |
-| Higher-Order | 4 | Double backprop, Hessians, Taylor coefficients |
-| Complex AD | 2 | Wirtinger calculus, phase retrieval |
-| Special Functions | 3 | Incomplete gamma, polylogarithm, Hurwitz zeta |
-| Numerical Traps | 4 | Log-sum-exp overflow, catastrophic cancellation, Fisher information |
-| Brutal | 12 | Wasserstein, Lyapunov exponent, Stiefel manifold, Sinkhorn, Riccati, GP, DAE, Fredholm |
+| Sorting & Ranking | 5 | Sinkhorn sort, pairwise ranking, soft top-k, soft quantile, soft NMS |
+| Differentiable Algorithms | 6 | Soft-DTW, soft edit distance, soft Bellman-Ford, Needleman-Wunsch, MST (matrix-tree theorem), CTC loss |
+| Gradient Estimation | 5 | REINFORCE, Gumbel-Softmax, score function, Rao-Blackwell, perturb-and-MAP |
+| Differentiable Simulation | 4 | 1D rendering with occlusion, elastic collision, spring-contact, sphere tracing (SDF) |
+| Implicit Layers | 5 | Deep equilibrium model, OptNet QP layer, Sinkhorn implicit, fixed-point IFT, power iteration backward |
+| Advanced Compositions | 5 | Smooth branching, soft k-means, Earth mover's distance, Hausdorff distance, temperature-scaled attention |
 
 ## Setup
 
@@ -39,29 +34,29 @@ python -m adbench.runner --dry-run
 python -m adbench.runner --list
 
 # Run against Anthropic (set ANTHROPIC_API_KEY)
-python -m adbench.runner --provider anthropic --model claude-sonnet-4-20250514 -o results.json
+python -m adbench.runner --provider anthropic --model claude-sonnet-4-5-20250929 -o results.json
+
+# Run with parallelism (5 concurrent API calls)
+python -m adbench.runner --provider anthropic --model claude-opus-4-6 -j 5 -o results.json
 
 # Run against OpenAI (set OPENAI_API_KEY)
 python -m adbench.runner --provider openai --model gpt-4o -o results.json
 
-# Filter by category or difficulty
-python -m adbench.runner --category brutal matrix_calculus
-python -m adbench.runner --level 3
+# Filter by category
+python -m adbench.runner --category diff_algorithms implicit_layers
 ```
 
 ## How It Works
 
-1. Each problem has a **prompt** (math statement + function signature) and a **reference solution**
-2. The LLM is asked to write a Python `solve()` function
-3. Code is extracted from the response and executed in a sandboxed environment
-4. Output is compared numerically to the reference at multiple test points
-5. Scoring: **Pass** (1.0) if all test points match, **Partial** (0.5) if ≥ half match, **Fail** (0.0) otherwise
-
-Default tolerances: `atol=1e-6`, `rtol=1e-4` (relaxed per-problem where appropriate).
+1. Each problem has a **prompt** describing a non-differentiable computation and asking for the gradient through a differentiable relaxation
+2. The LLM writes a Python `solve()` function
+3. Code is extracted and executed in a sandboxed environment (numpy/scipy available, no JAX/PyTorch)
+4. Output is compared numerically to reference values at multiple test points
+5. Scoring: **Pass** (1.0) all test points match, **Partial** (0.5) >= half match, **Fail** (0.0)
 
 ## Design Principles
 
-- **No hints**: Prompts state the mathematical problem, not the solution method
-- **Traps**: Several problems have obvious-but-wrong approaches (e.g., naive finite differences on chaotic systems, unstable formulas near cancellation points)
-- **Numerical verification**: All grading is automated — no LLM judge needed
-- **Diverse difficulty**: Level 2 (combine known techniques) and Level 3 (research-level reasoning)
+- **No hints** about which relaxation or technique to use
+- **Genuine differentiable programming**: sorting via Sinkhorn, DP with soft-min, implicit differentiation through fixed points — not textbook calculus
+- **Numerical verification**: all grading is automated, no LLM judge
+- **Prompts describe the forward computation** — the model must figure out how to differentiate through it

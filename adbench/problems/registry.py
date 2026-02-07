@@ -1,31 +1,21 @@
 """Central registry of all benchmark problems."""
 
 from adbench.problems import (
-    implicit,
-    integrals,
-    optimization,
-    matrix_calculus,
-    ode_sensitivity,
-    stochastic,
-    higher_order,
-    complex_ad,
-    special_functions,
-    numerical_traps,
-    brutal,
+    sorting_ranking,
+    diff_algorithms,
+    gradient_estimation,
+    diff_simulation,
+    implicit_layers,
+    compositions,
 )
 
 _ALL_MODULES = [
-    implicit,
-    integrals,
-    optimization,
-    matrix_calculus,
-    ode_sensitivity,
-    stochastic,
-    higher_order,
-    complex_ad,
-    special_functions,
-    numerical_traps,
-    brutal,
+    sorting_ranking,
+    diff_algorithms,
+    gradient_estimation,
+    diff_simulation,
+    implicit_layers,
+    compositions,
 ]
 
 PROBLEMS: dict = {}

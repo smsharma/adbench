@@ -3,6 +3,7 @@
 import json
 import time
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from adbench.problems import PROBLEMS, get_problems_by_category, get_problems_by_level
@@ -42,7 +43,7 @@ def run_problem(problem: Problem, provider: str, model: str | None, verbose: boo
     result["extracted_code"] = code
 
     # Execute code
-    solve_fn, exec_error = execute_code(code, timeout=30)
+    solve_fn, exec_error = execute_code(code, timeout=60)
     if solve_fn is None:
         result["error"] = exec_error
         result["score"] = 0.0
@@ -54,11 +55,23 @@ def run_problem(problem: Problem, provider: str, model: str | None, verbose: boo
     grade_result = problem.grade(solve_fn)
     result.update(grade_result)
 
-    if verbose:
-        status = "PASS" if grade_result["score"] == 1.0 else "PARTIAL" if grade_result["score"] == 0.5 else "FAIL"
-        print(f"  [{status}] {problem.id}: {grade_result['n_passed']}/{grade_result['n_total']} test cases")
-
     return result
+
+
+def _print_result(problem_id, result, idx, total):
+    """Print a single result line."""
+    score = result.get("score", 0)
+    status = "PASS" if score == 1.0 else "PARTIAL" if score == 0.5 else "FAIL"
+    n_passed = result.get("n_passed", 0)
+    n_total = result.get("n_total", 0)
+    cat = result.get("category", "")
+    diff = result.get("difficulty", "?")
+    if "error" in result and "n_passed" not in result:
+        print(f"[{idx}/{total}] {problem_id} (L{diff}, {cat})")
+        print(f"  [{status}] {result['error']}")
+    else:
+        print(f"[{idx}/{total}] {problem_id} (L{diff}, {cat})")
+        print(f"  [{status}] {problem_id}: {n_passed}/{n_total} test cases")
 
 
 def run_benchmark(
@@ -69,8 +82,13 @@ def run_benchmark(
     problem_ids: list[str] | None = None,
     output_file: str | None = None,
     verbose: bool = True,
+    parallel: int = 1,
 ) -> dict:
-    """Run the full benchmark or a subset."""
+    """Run the full benchmark or a subset.
+
+    Args:
+        parallel: Number of problems to run concurrently (default 1 = sequential).
+    """
     # Select problems
     if problem_ids:
         problems = [PROBLEMS[pid] for pid in problem_ids if pid in PROBLEMS]
@@ -85,14 +103,47 @@ def run_benchmark(
         print("No problems matched the filters.")
         return {}
 
-    print(f"Running {len(problems)} problems with {provider}" + (f" ({model})" if model else ""))
+    n = len(problems)
+    par_str = f", {parallel} parallel" if parallel > 1 else ""
+    print(f"Running {n} problems with {provider}" + (f" ({model})" if model else "") + par_str)
     print("=" * 60)
 
-    results = []
-    for i, problem in enumerate(problems):
-        print(f"[{i+1}/{len(problems)}] {problem.id} (L{problem.difficulty}, {problem.category})")
-        result = run_problem(problem, provider, model, verbose=verbose)
-        results.append(result)
+    results_map = {}  # problem_id -> result
+
+    if parallel <= 1:
+        # Sequential
+        for i, problem in enumerate(problems):
+            result = run_problem(problem, provider, model, verbose=False)
+            results_map[problem.id] = result
+            if verbose:
+                _print_result(problem.id, result, i + 1, n)
+    else:
+        # Parallel LLM queries, sequential grading output
+        completed = 0
+        with ThreadPoolExecutor(max_workers=parallel) as executor:
+            future_to_problem = {
+                executor.submit(run_problem, p, provider, model, False): p
+                for p in problems
+            }
+            for future in as_completed(future_to_problem):
+                problem = future_to_problem[future]
+                try:
+                    result = future.result()
+                except Exception as e:
+                    result = {
+                        "id": problem.id,
+                        "category": problem.category,
+                        "difficulty": problem.difficulty,
+                        "error": str(e),
+                        "score": 0.0,
+                    }
+                results_map[problem.id] = result
+                completed += 1
+                if verbose:
+                    _print_result(problem.id, result, completed, n)
+
+    # Collect results in original problem order
+    results = [results_map[p.id] for p in problems]
 
     # Summary
     print("\n" + "=" * 60)
@@ -146,7 +197,6 @@ def run_benchmark(
     }
 
     if output_file:
-        # Strip raw responses for a cleaner saved version (they can be huge)
         save_output = json.loads(json.dumps(output, default=str))
         Path(output_file).write_text(json.dumps(save_output, indent=2, default=str))
         print(f"\nResults saved to {output_file}")
@@ -191,6 +241,8 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Test reference solutions only")
     parser.add_argument("--list", action="store_true", help="List all problems")
     parser.add_argument("--quiet", action="store_true", help="Less verbose output")
+    parser.add_argument("--parallel", "-j", type=int, default=1,
+                        help="Number of problems to run concurrently (default: 1)")
 
     args = parser.parse_args()
 
@@ -214,6 +266,7 @@ def main():
         problem_ids=args.problems,
         output_file=args.output,
         verbose=not args.quiet,
+        parallel=args.parallel,
     )
 
 
